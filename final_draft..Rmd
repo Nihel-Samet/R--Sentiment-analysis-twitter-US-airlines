@@ -1,10 +1,6 @@
 ---
 title: "Sentiment Prediction of US Airline Tweets"
 author: "Nihel Samet"
-date: "23/06/2021"
-output:
-  html_document: default
-ID: '''07236042'''
 ---
 
 # 1. Data Description
@@ -58,7 +54,7 @@ library(treemapify)
 Uploading the data.
 
 ```{r}
-setwd("C:/Users/nihel/Desktop/Dossssierrrr/S2 M1/ML project/data")
+setwd("C:/Users/data")
 ustweets <- read.csv('tweets.csv', header = T)
 ```
 
@@ -114,7 +110,6 @@ tweets %>%
   summarise(Count = n()) %>% 
   top_n(5)
 ```
-
 
 
 4733 of tweets are without location. People who landed at Boston state have the most tweets about these six airlines.
