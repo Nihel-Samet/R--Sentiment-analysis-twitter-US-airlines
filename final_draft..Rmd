@@ -3,14 +3,9 @@ title: "Sentiment Prediction of US Airline Tweets"
 author: "Nihel Samet"
 date: "23/06/2021"
 output:
-  pdf_document: default
   html_document: default
 ID: '''07236042'''
 ---
-
-##### Links
-
-[Recording](https://drive.google.com/drive/folders/1GkvJGBe3Ust6lbn7qPxJt0Ql-eV9uZf0).
 
 # 1. Data Description
 
