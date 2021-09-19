@@ -1,0 +1,641 @@
+---
+title: "Sentiment Prediction of US Airline Tweets"
+author: "Nihel Samet"
+date: "23/06/2021"
+output:
+  pdf_document: default
+  html_document: default
+ID: '''07236042'''
+---
+
+##### Links
+
+[Recording](https://drive.google.com/drive/folders/1GkvJGBe3Ust6lbn7qPxJt0Ql-eV9uZf0).
+
+# 1. Data Description
+
+The dataset used in this project is provided on **Kaggle** and originally collected by **Crowdflower's Data for Everyone library.** 
+
+This Twitter data was scraped on **February 2015**. It contains tweets on six major United States(US) airlines. 
+
+The dataset contains **14640 instances which are tweets submitted by individual travelers** and **15 features**.And each instance is labeled as positive, negative or neutral.
+
+Features description:
+
+- **tweet_id:** A numeric feature which give the twitter ID of the tweet's writer.
+- **airline_sentiment:** A categorical feature contains labels for tweets, positive, negative or neutral.
+- **airline_sentiment_confidence:** A numeric feature representing the confidence level of classifying the tweet to one of the 3 classes.
+- **negativereason:** Categorical feature which represent the reason behind considering this tweet as negative.
+- **negativereason_confidence:** The level of confidence in determining the negative reason behind the negative tweet.
+- **airline:** Name of the airline Company
+- **airline_sentiment_gold**
+- **negativereason_gold**
+- **retweet_count:** Number of retweets of a tweet.
+- **text:** Original tweet posted by the user.
+- **tweet_coord:** The coordinates of the tweet.
+- **tweet_created:** The date and the time of tweet.
+- **tweet_location:** From where the tweet was posted.
+- **user_timezone:** The timezone of the user.
+
+In this work we want to determine which airlines tweeted about the most and the reason behind the negative tweets. Then we will see the most frequent words used in the tweets using the WordCloud technique. And finally We will predict the **sentiment of a tweet** without any other information but the **tweet text** itself, using carious machine learning algorithms.  
+
+# 2. Exploratory Data Analysis
+
+Uploading libraries
+
+```{r message=FALSE, warning=FALSE}
+library(tidyverse) # for piping and select()
+library(textcat) # to determine the language of the tweets
+library(ggplot2) # visualizing interesting and interactive graphs
+library(tm) # text mining package to create corpus
+library(SnowballC) # for cleaning the tweets
+library(wordcloud) # to create WordClouds which give the most frequent words
+library(dplyr) # for data manipulation
+library(rpart) # build decision tree model  
+library(rpart.plot) # plot the decision tree
+library(randomForest) # RandomForest model
+library(caret) # for confusion matrix
+library(nnet) # for multinomial logistic regression
+library(Metrics) # for accuracy function
+library(treemapify)
+```
+
+Uploading the data.
+
+```{r}
+setwd("C:/Users/nihel/Desktop/Dossssierrrr/S2 M1/ML project/data")
+ustweets <- read.csv('tweets.csv', header = T)
+```
+
+Let's have a look at the structure of the data.
+
+```{r}
+str(ustweets)
+#View(tweets)
+ustweets[3:4,]
+```
+
+The reviews need to be cleaned for further analysis. 
+
+Let's randomize our data using the sample() command in case it's not randomized. 
+
+```{r}
+set.seed(1912)  
+tweets <- ustweets[sample(nrow(ustweets)),]
+```
+
+
+Extract relevant features.
+
+```{r}
+tweets <- tweets %>% 
+  select(airline_sentiment, negativereason, airline, text, tweet_location)
+```
+
+Checking for missing values.
+
+```{r}
+sum(is.na(tweets))
+```
+
+Luckily we don't have any missing values.
+
+#### Plot of Airlines
+
+```{r}
+ggplot(tweets) + aes(airline,fill= airline) + geom_bar() +geom_text(stat='count', aes(label=..count..), vjust=1.6, color="black")  + labs(title= 'Plot of Airlines') +  theme_minimal()
+
+
+```
+As we see we have six different airlines which are American, Delta, Southwest, United, US Airways and Virgin America. The most airline tweeted about is **United airlines**. And the least is **Virgin America.**
+
+Let's assume that passengers will go through the trouble of tweeting about an airline only if they were highly impressed or highly disappointed.
+
+#### Most frequent tweets by location.
+
+```{r message=FALSE, warning=FALSE}
+tweets %>%
+  group_by(tweet_location) %>%
+  summarise(Count = n()) %>% 
+  top_n(5)
+```
+
+
+
+4733 of tweets are without location. People who landed at Boston state have the most tweets about these six airlines.
+
+We also notice that most of the tweets are from important cities in the US. So I would assume that many of the plane passengers are professionals traveling for work and not for pleasure. Thus, they expect their flight to be on time and to get good service.
+
+# 2. Text Pre-processing and Sentiment Analysis
+
+### Cheking the language
+
+Let's have a look at what language the tweets are written in. 
+
+```{r}
+tweets$language = textcat(tweets$text)
+
+ggplot(tweets, aes(x=language))+ geom_bar(stat="count", fill="lightblue") +  ggtitle("Language Count") + xlab("Language") + ylab("Count") + theme_minimal() + coord_flip() +   theme_minimal()
+
+```
+As expected, English is the most common language since we are dealing with US airlines. However, Scots seems to be extremely popular too. Nevertheless, Scots is the closest language to  English.
+
+I will keep only English and Scottish tweets for the text analysis.
+
+```{r}
+tweets = subset(tweets, language =='english' | language =='scots')
+dim(tweets)
+```
+
+### Text Pre-processing
+
+Building and cleaning corpus with the help of **tm** package. 
+
+A corpus is a collection of document so each tweet will be treated as a document. We create a VectorSource, that is the input type for the Corpus function defined in the package tm. 
+
+```{r}
+corpus0 <- iconv(tweets$text, to = "UTF-8")
+corpus <- Corpus(VectorSource(corpus0))
+inspect(corpus[1:5])
+
+```
+
+First we put everything in lowercase. Then we remove punctuation, remove numbers, English stop words(common words), strip white spaces, and stem each word. 
+
+Convert text to lower case.
+
+```{r warning=FALSE}
+corpus <- tm_map(corpus, tolower)
+inspect(corpus[1])
+```
+
+Remove all punctuation.
+
+```{r warning=FALSE}
+corpus <- tm_map(corpus, removePunctuation)
+inspect(corpus[1])
+```
+
+Remove all number.
+
+```{r warning=FALSE}
+corpus <- tm_map(corpus, removeNumbers)
+inspect(corpus[1])
+```
+
+Remover common English words.
+
+```{r message=FALSE, warning=FALSE}
+corpus <- tm_map(corpus, removeWords, stopwords('english'))
+inspect(corpus[1])
+corpus <- tm_map(corpus, removeWords, c('flight','get','plane','flights','flightl', 'i', 'day', 'im', 'cant', 'can', 'now', 'just', 'will', 'dont', 'ive', 'got', 'much'))
+```
+
+Get rid of white space.
+
+```{r warning=FALSE}
+corpus <- tm_map(corpus, stripWhitespace)
+inspect(corpus[1])
+```
+
+Stemming of documents, normalize words into its base form or form.
+
+```{r warning=FALSE}
+corpus <- tm_map(corpus, stemDocument)
+inspect(corpus[1])
+```
+
+### Creating the Bag of Words model
+
+TermDocumentMatrix(TDM) convert text data(unstructured) into rows and columns(structured). Where in rows we find the term(words) and in columns the document(tweets).
+
+TDM identify each and every term in the document(tweets) and give the  count how many times each time the word repeat in each document.
+
+```{r}
+TDM <- TermDocumentMatrix(corpus)
+TDM
+```
+
+The TDM contains 11286 terms and 13691 documents with 100% sparcity.
+
+Some terms(words) are more important than others, and we want to remove those that are not. So we will use the function **removeSparseTerms** from the **tm package** where we reduce the sparsity to 99.9%.
+
+```{r}
+TDMS <- removeSparseTerms(TDM, sparse = 0.999)
+TDMS
+TDM_matrix <- as.matrix(TDMS)
+TDM_matrix[1:7, 1:7]
+```
+
+Now our DTM composed of 1128 terms and 13691 documents.
+
+### Extract most frequent terms
+
+Most frequent words, how often the word appear.
+
+```{r}
+w <- rowSums(TDM_matrix)
+```
+
+#### Plot of words with frequency more then 500
+
+```{r}
+s <- subset(w,w>=500)
+v <- sort(s, decreasing = T)
+barplot(v,col = rainbow(38),las = 2, main = "Plot of words with frequency more then 500", xlab = "Words", ylab = "Frequency", border = "black",   )
+```
+
+Most of the discussion are about **United, American,USairways and Southwest airlines**, since that they were mentioned more than *2000 time.*
+
+Also, we see that *help, cancel, hour, thank, time, delay and jetblue,* all mentioned more than a *1000 time.*
+
+## WordCloud
+
+The **WordCloud** is a technique for visualizing important words right away.
+
+```{r}
+wc <-  sort(w, decreasing = TRUE)
+set.seed(222)
+wordcloud(words= names(wc),
+          freq= wc,
+          max.words= 200,
+          random.order=F,
+          colors = brewer.pal(12, 'Paired'),
+          rot.per= 0.3)
+```
+
+Most tweets about the four airlines I mentioned above also about delay, hour, cancel, time, help, custom and service. 
+
+These words imply that the reviews about the airlines are not good.
+
+#### Comparison of Corpus
+
+Now I will be comparing the corpus of all three sentiments.
+
+Subsetting the sentiments.
+
+```{r}
+pos_tweets <- subset(tweets$text , tweets$airline_sentiment=="positive")
+neg_tweets <- subset(tweets$text , tweets$airline_sentiment=="negative")
+neu_tweets <- subset(tweets$text , tweets$airline_sentiment=="neutral")
+```
+
+Paste and collapse positive, negative and neutral tweets.
+
+```{r}
+pos_terms <- paste(pos_tweets , collapse =" ")
+neg_terms <- paste(neg_tweets , collapse =" ")
+neu_terms <- paste(neu_tweets , collapse =" ")
+```
+
+Combine both positive and negative terms.
+
+```{r}
+all_terms <- c(pos_terms, neg_terms, neu_terms)
+```
+
+Building the corpus and creating the TDM.
+
+```{r}
+all_corpus <- VCorpus(VectorSource(all_terms))
+
+all_tdm <- TermDocumentMatrix( all_corpus, control = list(removePunctuation = TRUE, removeNumbers =TRUE, stemDocument = TRUE, tolower = TRUE ,stopwords= c('flight','get','plane','flights','flightl', 'i', 'day', 'im', 'cant', 'can', 'now', 'just', 'will', 'dont', 'ive', 'got', 'much'), stopwords = stopwords('english')))
+
+all_tdm_m <- as.matrix(all_tdm)
+```
+
+#### Comparaison WordCloud.
+
+```{r message=FALSE, warning=FALSE}
+colnames(all_tdm_m) <- c("positive","negative", "neutral")
+
+all_term_freq <- rowSums(all_tdm_m)
+all_term_freq <- sort(all_term_freq,TRUE)
+
+comparison.cloud(
+  all_tdm_m, 
+  max.words = 100,
+  colors = c("#00BA5D", "#E83B20","#00468b")
+)
+```
+
+The result shows that words expressing **positive emotions are thanks, good, great, better, awesome**. we can also see that **Southwest and Virgin America** are mentioned here. **This indicate that the passengers who used SouthWest and Virgin America were delighted with their flight**, the service was good, their luggage were unharmed, the plane came on time, ect.
+
+As we notice that **negative emotions gave words such as delayed, hold, canceled, lost, late, hours, waiting, service**, ect. Furthermore, we have here **US Airways and American airlines.** I would say that the passenger who wrote these negative reviews must of **faced challenges** while flying under these airline, such as, delayed or canceled flight, the waiting time took longer than expected, the service was bad, their luggage were lost or destroyed.
+
+## Sentiment Analysis
+
+```{r}
+# % of all sentiments
+round(prop.table(table(tweets$airline_sentiment)),3)
+
+ggplot(tweets) + aes(airline_sentiment,fill= airline_sentiment) + geom_bar() +geom_text(stat='count', aes(label=..count..), vjust=1.6, color="white")  + labs(title= 'Plot of Sentiments') +
+  scale_fill_manual(values = c("#ff576a","#3db5ff", "#66CC99"))+  theme_minimal()
+
+```
+
+Overall sentiments: **64.4%** of the tweets were negative, **19.9%** were neutral and, **15.7%** were positive. This implies that the data is biased towards the negative class.
+Therefore, people actually write a tweet about their flight if something bad happened.
+#### Plot of Tweet Sentiment by Airline
+
+```{r}
+ggplot(tweets, aes(x = airline , fill = airline_sentiment))+ geom_bar( colour = 'black')  + scale_fill_manual(values = c("#ff576a","#3db5ff", "#66CC99")) + labs(x = 'airlines', y = 'Proportion', title ='Tweet Sentiment by Airline') + theme(axis.text.x = element_text(angle = 25, size=9)) +  theme_minimal()
+
+```
+
+We notice here that **all airlines** experienced **negative** feedback **more than positive and negative feedbacks**. And since United is the most tweeted about airline of course it will get the most negative feedback.
+
+While Virgin America has the least negative tweets but also all the sentiment are proportionally close to each others.
+
+#### Plot of Negative Reasons
+
+```{r}
+
+plotdata <- tweets %>%
+  count(negativereason)
+
+ggplot(plotdata, 
+       aes(fill = negativereason, 
+           area = n, 
+           label = negativereason)) +
+  geom_treemap() + 
+  geom_treemap_text(colour = "white", 
+                    place = "centre", size=20) +
+  labs(title = "Negative reason ") +
+  theme(legend.position = "none")  
+
+```
+
+More 5000 of passengers gave positive or neutral review. And the other passengers did. And there are multiple reason behind behind these bad reviews.
+
+Overall the **most negative** reasons are **customer service issues**, with the highest percentage, and **late flights.** And the **least** reason is **damaged luggage.**
+
+#### Plot of Negative Reason per Airline
+
+```{r}
+ggplot(tweets) + aes(x= negativereason, fill=negativereason ) + facet_wrap(~airline) + geom_bar() + 
+  labs(x = 'Negative Reason', y = 'Count', title ='Negative reason per Airline')+theme(axis.text.x = element_text(angle = 25, size=6))
+
+```
+
+Most airlines have problem with *customer service* and that could be due to kicking passenger out the airplane when the fight is overbooked or late service delivery. While Delta airline has a problem **late fights.**
+
+
+Next up, let's see the distribution of text length of the tweets by adding a new feature for the length of each tweet.
+
+#### Distribution of Text Lengths with Sentiment
+```{r}
+tweets$text_length <- sapply(tweets$text, function(x) nchar(x))
+
+ggplot(tweets, aes(x = text_length, 
+    fill = airline_sentiment))  +
+  geom_density(alpha = 0.5)  +
+  labs(x = 'Length of Text', title= 'Distribution of Text Lengths with Sentiment')  +
+  theme(text = element_text(size=12)) +
+  scale_fill_manual(values = c("#ff576a","#3db5ff", "#66CC99")) +  theme_minimal()
+
+
+```
+
+We can clearly see here that the majority of long tweets are the negative ones. While most of the short tweets are neutral. 
+
+To sum up, people who are experiencing negative situations tend to write longer tweets.
+
+
+# 4. Sentiments Classification
+
+## Preparing the data
+
+To find document input features for our classifier, we want to put this corpus in the shape of a document matrix. 
+
+A document matrix is a numeric matrix containing a column for each different term(word) in our whole corpus, and a row for each document(tweet).
+
+```{r}
+datadtm = DocumentTermMatrix(corpus)
+datadtm
+```
+
+The DTM presently has 11286 words extracted from 13691 tweets. These words are what we will use to decide if a tweet is positive, neutral or negative.
+The sparsity of the DTM is 100% which means no words is left out the matrix. 
+
+If we consider each column as a term for our model, we will end up with a very complex model with 11286 different features. And it will take hours for model to run if we work with 11286 terms. We need to reduce the number and work with only the most frequent once.
+
+Reduce sparsity to 99.9%.
+
+```{r}
+datadtm = removeSparseTerms(datadtm, 0.999)
+dim(datadtm)
+```
+
+Now we can work with our model without difficulties and effectively.
+
+Preparing the DTM.
+
+```{r}
+dataset <- as.data.frame(as.matrix(datadtm))
+colnames(dataset) <- make.names(colnames(dataset))
+dataset$airline_sentiment <- tweets$airline_sentiment
+str(dataset$airline_sentiment)
+```
+
+Convert airline_sentiment to factor.
+
+```{r}
+dataset$airline_sentiment <- as.factor(dataset$airline_sentiment)
+```
+
+### Splitting the data into Train & Test datasets
+
+```{r}
+set.seed(222)
+split = sample(2,nrow(dataset),prob = c(0.8,0.2),replace = TRUE)
+train_set = dataset[split == 1,]
+test_set = dataset[split == 2,]
+train_set[4:6,57:59]
+test_set[4:6,57:59]
+```
+
+#### Baseline accuracy
+
+let's compare the proportion the training and the test sets to the dataset, to confirm that they are the same.
+
+```{r}
+prop.table(table(train_set$airline_sentiment))
+prop.table(table(test_set$airline_sentiment))
+```
+
+The data is biased towards negative tweets. Thus, the machine learning algorithms will predict negative tweets more accurately than the positive and the neutral tweets. 
+
+The accuracy of any model should be better than 65%.
+
+###    a)Decision Tree
+
+A CART model stands for classification and regression trees. In our case it will be classification because we are dealing with categorical features.
+Some of the benefits if decision tree that it is easier to interpret ans visualize.
+
+####    Model Training
+
+To train the model, we will be using *rpart function* from *rpart package*. Once the model is trained we will test using the predict function.
+
+```{r}
+dt_classifier <- rpart(airline_sentiment ~ ., data= train_set, method="class", minbucket= 25)
+rpart.plot(dt_classifier)
+summary(dt_classifier)
+```
+
+**Thank** is the most important term in classifying tweets into negative or positive .
+
+There this only one split in the tree which is based on the condition that **thanks<1** was mentioned in the tweet. 
+- If it is then is then we move to right and predict **positive**. 
+- If it is not mentioned then predict **negative**.
+
+For the 88% of tweets without 'thank' in their tweet, 70% of them are considered people with negative emotions, with 21% neutral, and with positive emotions only 9%.
+
+While 12% of those who wrote 'thank' in their tweets 25% are with negative emotions, 14% with neutral emotions, and 62% with positive.
+
+**This model is useless because because it doesn't give classification for the neutral class.**
+
+Let's now see how the Random Forest will perform.
+
+#### Predict train
+
+```{r}
+dt_predict1 <- predict(dt_classifier, newdata=train_set, type="class")
+accuracy(dt_predict1,train_set$airline_sentiment)
+```
+
+It looks promising considering our baseline is 0.65.
+
+####    Model Testing
+
+To understand how good the classifier is, we will predict sentiments in test data set.
+
+```{r}
+dt_pred = predict(dt_classifier, newdata=test_set, type="class")
+```
+
+####    Model Evaluation
+
+A confusion matrix will give us metric like accuracy, sensitivity and specificity.
+
+```{r}
+confusionMatrix(table(dt_pred,test_set$airline_sentiment))
+```
+
+The result shows that our decision decision model has accuracy of 0.6764  on test dataset, meaning that 67.64% of our data is correctly classified. 
+
+Sensitivity for class **negative** is 0.9604 implies that 96.04% of negative tweets were correctly classified. **The model almost perfectly classified the negative class.** The specificity of 0.2175 implies that 21.75% of non-negative tweets were correctly classified.
+
+Sensitivity for class **neutral is 0 implies none of the neutral tweets were  classified correctly**.  As for the specificity it implies that all of non-neutral tweets were correctly classified.
+
+Sensitivity for class **positive** is 0.4135 implies that 41.35% of positive tweets were correctly classified which is **not a good.** The specificity of 0.9558 implies that 95.58% of non-positive tweets were correctly classified. This is expected because we already know that the data is biased towards negative class.
+
+**This model is useless because because it doesn't give classification for the neutral class.**
+
+###   b) Random Forest Model
+
+Random forest algorithm avoids overfitting and can deal with large number of features. Works by building large number of CART trees. Each tree vote on the outcome and we pick the outcome which receives the majority vote. Each tree can split on only random subset of the variables and the observation are randomly selected. It uses majority vote for classification. 
+
+I will train this model with 20 trees so it wont take hours to run.
+
+####    Model Training
+
+To train the model, we will be using *randomForest function* from *randomForest package*. 
+
+```{r}
+rf_classifier = randomForest(airline_sentiment ~., data=train_set, ntree = 20)
+rf_classifier
+```
+
+As expected, the output notes that the random forest included 20 trees and tried 33 variables at each split. 
+
+#### Predict Train
+
+```{r}
+rf_predict1 <- predict(rf_classifier, newdata=train_set, type="class")
+accuracy(rf_predict1,train_set$airline_sentiment)
+```
+
+It looks promising considering our baseline is 0.65.
+
+####    Model Testing 
+
+Predicting the Test set results.
+
+```{r}
+rf_pred = predict(rf_classifier,  test_set,"class")
+```
+
+####    Model Evaluation
+```{r}
+confusionMatrix(table(rf_pred, test_set$airline_sentiment))
+```
+
+The result shows that our random forest model has **accuracy of 0.748**  on test dataset, meaning that 74.76% of our data is correctly classified. 
+
+Sensitivity for class **negative** is 0.9115 implies that 91.15% of negative tweets were correctly classified.  Similarly, the specificity of 0.5821 implies that 58.21% of non-negative tweets were correctly classified. **The model did great at classifying the negative class.**
+
+Sensitivity for class **neutral** is 0.39781 implies that 39.781% of negative tweets were correctly classified.  Similarly, the specificity of 0.91859 implies that 91.859% of non-neutral tweets were correctly classified. **Did not do well at classifying the neutral class.**
+
+Sensitivity for class **positive** is 0.54831 implies that 54.831% of positive tweets were correctly classified. The specificity of 0.95938 implies that 95.938 % of non-positive tweets were correctly classified. 
+
+###     c) Multinomial Logistic Regression
+
+Multinomial Logistic Regression used to predict multinomial outcomes. In our case that is whether the sentiment gave positive, neutral or negative feeling.
+
+####    Model Training
+
+To train the model, we will be using *multinom function* from *nnet package*. 
+```{r}
+#  MaxNWts in the nnet package controls the maximum number of weights.
+lg_classifier <- multinom(airline_sentiment ~., data=train_set, MaxNWts =4000)
+```
+
+####    Predict train
+
+```{r}
+lg_predict1 <- predict(lg_classifier, newdata=train_set, type="class")
+accuracy(lg_predict1,train_set$airline_sentiment)
+```
+
+####    Model Testing
+
+```{r}
+lg_pred <- predict(lg_classifier, newdata = test_set, "class")
+```
+
+It looks promising considering our baseline is 0.65.
+
+####    Model Evaluation
+
+```{r}
+confusionMatrix(table(lg_pred,test_set$airline_sentiment))
+```
+
+The result shows that our multinomial logistic regression model has **accuracy of .7531**  on test dataset, meaning that 75.31% of our data is correctly classified. 
+
+The value of sensitivity and specificity of the **negative class** is 0.8550 and 0.8550 This indicate that 85.50% of negative outcomes are correctly classified also 0.7291% of the non-negative outcomes are correctly classified too. **Did well classifying the negative class.**
+
+The value of sensitivity and specificity of the **neutral** class is 0.5274 and 0.8881. This indicate that 52.74% of neutral outcomes are correctly classified also 88.81% of the non-neutral outcomes are correctly classified too. **The prediction of the neutral class is not as strong the negative class.**
+
+The value of sensitivity and specificity of the **positive** class is 0.6382 and 0.9302. This indicate that 63.82% of positive outcomes are correctly classified also 93.02% of the non-positive outcomes are correctly classified too. 
+
+
+# 5. Conclusion
+
+The RandomForest predicted the outcomes significantly better than the Decision Tree classifier. But it was the **Multinomial Logistic Regression model who gave the best accuracy.**
+ 
+As for the sensitivity, the **Decision Tree model** classified **negative** outcome correctly more often than the Random Forest and Multinomial Logistic Regression. As a result, the sensitivity of the Decision Tree is higher and the specificity is lower. However, it performed worse in classifying correctly **neutral and  positive** outcomes. While the **Multinomial Logistic Regression** did well at classifying correctly the neutral and the positive outcomes.
+
+**We can conclude that the Multinomial Logistic Regression model is the best model for predicting the sentiment of tweets with an accuracy of 75.31%.**
+
+In this work we extracted many information about the given datatset. Which are:
+
+- 26% of tweets were about United airline, it was also the most complained about airline due to bad service and late flights.
+
+- More than 60% of the tweets expressed negative emotions.
+
+- The longer the tweet the more it expresses negative feelings.
+
+- As for the sentiment classification we found that the Multinomial Logistic Regression model did best at predicting the sentiments.
+
