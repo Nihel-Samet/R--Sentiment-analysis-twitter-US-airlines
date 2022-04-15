@@ -1,3 +1,5 @@
+
+Rpubs: https://rpubs.com/Nihel/SentimentPredictionUSAirlineTweets
 ---
 title: "Sentiment Prediction of US Airline Tweets"
 author: "Nihel Samet"
@@ -9,7 +11,7 @@ The dataset used in this project is provided on **Kaggle** and originally collec
 
 This Twitter data was scraped on **February 2015**. It contains tweets on six major United States(US) airlines. 
 
-The dataset contains **14640 instances which are tweets submitted by individual travelers** and **15 features**.And each instance is labeled as positive, negative or neutral.
+The dataset contains **14640 instances which are tweets submitted by individual travelers** and **15 features**. Each instance is labeled as positive, negative or neutral.
 
 Features description:
 
@@ -28,7 +30,7 @@ Features description:
 - **tweet_location:** From where the tweet was posted.
 - **user_timezone:** The timezone of the user.
 
-In this work we want to determine which airlines tweeted about the most and the reason behind the negative tweets. Then we will see the most frequent words used in the tweets using the WordCloud technique. And finally We will predict the **sentiment of a tweet** without any other information but the **tweet text** itself, using carious machine learning algorithms.  
+In this work we want to determine which airlines tweeted about the most and the reason behind the negative tweets. Then we will see the most frequent words used in the tweets using the WordCloud technique. And finally We will predict the **sentiment of a tweet** without any other information but the **tweet text** itself, using various machine learning algorithms.  
 
 # 2. Exploratory Data Analysis
 
